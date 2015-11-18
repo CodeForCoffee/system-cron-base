@@ -1,0 +1,206 @@
+#!/bin/bash
+# Author: Matt Wells
+# Name: system-cron-run
+prog=system-cron-run
+# Version: 1.2
+# Release: 1.2
+# Summary: This cronjob is used to enforce the security posture for a RHEL/CentOS 6 systems.
+# Group: System Tools
+# License: GPL
+# Requires: ansible, libselinux-python, git
+# Changelog:
+# 	20150723 - Matt Wells
+#		1.0 - First deployment 
+#	20150727 - Matt Wells
+#		1.2 - Key was not getting the correct permissions.  Had to fix those.
+#				Moved keys to base64 
+#	20151101
+#		1.3 - Adjustment to SSH Keys in order to create a publically "consumable" project
+
+# Variables and other items that are used within this script.  Expect these items to be different
+# in your environment
+DATE=`date +%Y%m%d`
+DATED=`date -d "now" +%s`
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# This is the git repo used for enforcing the system baseline.  
+gitRepo="git@github.com:matt-wells-m451/system-cron-base.git"
+
+# Working directories
+hardeningDir="/opt/hardening" # This is the base directory used to house and execute the git repo
+serviceHome="/home/${svcAccount}" # This repo assumes a service account on the system or in LDAP.  This is that service accounts home directory.  This directory will house SSH keys.
+lastRun="${hardeningDir}/.system-cron" # A small control file that is used to compare it's last known run. Later this date is used to assist in alerting in a monitoring system such as Nagios.
+nagiosFile="/tmp/nagios/system-cron" # A simple control file for Nagios or another monitoring system to view.  
+
+svcAccount=svc_ansible # Service account to run the ansible playbook as and own the files
+
+
+# This function will ensure that all software and SSH keys are present.  
+preFlight () {
+
+# Ensure the system has a home directory and .ssh folder for ${svcAccount} account.  
+	if [ ! -d ${serviceHome}/.ssh ]; then
+
+		mkdir -p ${serviceHome}/.ssh
+		chown ${svcAccount} ${serviceHome}
+		chmod 700 ${serviceHome}/.ssh
+		restorecon ${serviceHome}/.ssh
+		chown ${svcAccount}:${svcAccount} -R ${serviceHome}
+	fi
+
+
+# These SSH Keys are base64 encoded. Ansible Vault could be used here however for this project a simple obfuscation of the keys was used.
+	if [ ! -f ${serviceHome}/.ssh/id_rsa.pub ]; then
+
+		echo "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBQkl3QUFBUUVBeTV5WHNLNVpBU1VtSzM2R0pVamN2
+NDRWU0VQRCtONXJKVGNzRGY3RXlIdkNUY29hNTBhKzNKNWZBOFp4RkoxMHRLVHJ4c3ZNSUF3VFdi
+b2tYYi9EZS9oeGk1YnVjTHJ5RVBRcjRaMUt1NUUza2tEbThyRmR5d3B1VWZtdVVwZTllUFB2Nmw4
+RzlNSWZaZHJQSVRSZmo4SDVGSWhBSkphNlBKYzljSCs0dHJZdTJ2SldVQXFTS3UwWWJZMGtERGRG
+bzFlaWE3R3Q1ZStuaHlWMkpJWGdZU1lhMkdiK0ZMV3dwSDBvQkt6YUNySEZmMVlzUlhjTWh0T3RH
+YitDZ0hWcGNUdjZlSnpwYjBZMm1GQXdVYmRuQUcrdmNuY1pLREFXYkljR1RnRU4wQWFYcU5Td0ZD
+RDkzRFZ4SElJOVRNandnYkVlWkljbzd2RHYvS2M4TnRONStRPT0gc3ZjX2Fuc2libGVAbGFzMDEt
+MDMzLTAwMS5leGFtcGxlLmNvbQo=" | base64 -d > ${serviceHome}/.ssh/id_rsa.pub
+	restorecon ${serviceHome}/.ssh/id_rsa.pub
+	chown ${svcAccount}:${svcAccount} -R ${serviceHome}
+	fi
+
+	if [ ! -f ${serviceHome}/.ssh/id_rsa ]; then
+
+		echo "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb2dJQkFBS0NBUUVBeTV5WHNLNVpB
+U1VtSzM2R0pVamN2NDRWU0VQRCtONXJKVGNzRGY3RXlIdkNUY29hCjUwYSszSjVmQThaeEZKMTB0
+S1RyeHN2TUlBd1RXYm9rWGIvRGUvaHhpNWJ1Y0xyeUVQUXI0WjFLdTVFM2trRG0KOHJGZHl3cHVV
+Zm11VXBlOWVQUHY2bDhHOU1JZlpkclBJVFJmajhINUZJaEFKSmE2UEpjOWNIKzR0cll1MnZKVwpV
+QXFTS3UwWWJZMGtERGRGbzFlaWE3R3Q1ZStuaHlWMkpJWGdZU1lhMkdiK0ZMV3dwSDBvQkt6YUNy
+SEZmMVlzClJYY01odE90R2IrQ2dIVnBjVHY2ZUp6cGIwWTJtRkF3VWJkbkFHK3ZjbmNaS0RBV2JJ
+Y0dUZ0VOMEFhWHFOU3cKRkNEOTNEVnhISUk5VE1qd2diRWVaSWNvN3ZEdi9LYzhOdE41K1FJQkl3
+S0NBUUFYUlJpbWVsTlFsb2dFK0lSYwpDRk8rSHQzY1g0UWNjVERSRFo2aWc0UTBLMmFwemZSeU0v
+aU9QZnc2OGh1TlU5TFMwUVVBeHRXQUFXRk1GVVg4CkZlcDBrV3dQOC8zK1FVQThjNjArV3g1NzFo
+VDZ4WmE4cG81Z1dQYXFTR3V4cXZFVkl6RmNuU1ZkelFybkViRkYKbjVYa2l6Sm92eDFHQXBqdysx
+ZDZra0QrOEF1bFc5ZVB6U0NzN2VTR3I5a3NYdHVlZkFZUFZIQ2JQOWFuc2tQRgp3akFvSExldk1w
+OUhTOFNWVlYwM2FKdEVsSWI4RVVuSFdNTlE3MnBuUEsyRmtQV005ZHNjSHM3ZFlLUFV6Q2twCk84
+TXowQ2xEdHR1K3l3OHhjM2ltR3F1cGZEN1N1Ym9MMXVjeUtLRWRydExRTCs2cDBHOVdJdlBRYzFL
+TTFQeHAKcjhCTEFvR0JBTzFBWldlOXFLQmlZd1BvZ3FyTVVZZG1hbHh5NUpOL0hLcHBlMEpmMENz
+VjNTTGtpS2djMzMwdwpaQ0h6VUxyQ2owTjFmdlIzUjFGMjAzUGhNalRyODRNcFQvMi9LZSs0R0Rh
+TjRHb0lMblJ3aHg0VmM4aWdORlhyCjAxQzZ5YlhXb0FaNzAwTG40a1g4VEw1RVFlNkIvQlQxV0ht
+VTEwL1p1REt0bnV0aDJoUlZBb0dCQU51enFWQm8KSHhQZmFJVHFoOHo3cDd5U01CRHlxa0VZWkdi
+aVVtTENVby9zVGJDMjQyUkgvenRaYmhac2lOQ3dEdVRzUC9JOQo1dzRMMFZZeE9sOUR6WUcyaEwr
+RFpXZW1JR2FFZFY0Z3ZnYUtpeWhNZzAzQ2l2dVFBVlhsemZudVoydDVLRkZFCnBsRHBCVEVVaHBv
+dEtYTStlTmFkL2dPMVI2cit3TEE0TjVNVkFvR0JBSnZvZlNicVdONXNpalhFcmFOd1V0VlIKN2g5
+K3MzYmVnSTArQUlxei9kTXJuL0picWtLV29YNG5IVHJodUxVK0JsK0h1ZFBaV3NDQlNTQkRoMlNi
+RGJ5WApmYlZnWFdNRDhxZUJ6ZnlKQ0pXcENGV1pFWkozNStDdzZmTTQ2dlBXTHFVc3pLaFBQT3dw
+ZEVLRW9Gcm50RWhKCmRLZXE4K1FFR2ZWcXg0UzhwVUNQQW9HQVMxT0tnZmZRSkJJVk5PS3lONmE5
+S3JYSFZrU1NKUEpya1Awamo1TVUKL2lVaDgzSG5rQml2UjR4Z1FqUFhJdnFJdzRRekxudWZyUXRk
+dHliU0wwcHlXRnZWdmdFcUZPaUFJeVlabkoyQwordTJzRGRFWEUxaWtyZ1Y4elA1VlA3OXo2bFZz
+NktuU24yWFY1UEVZTk54SXVjeEdyL3VuakQ0bk0xQUhqT0FUCkRkc0NnWUVBdlN2ODhDUnZ1QlhN
+WE5RTzd2OTAxaFBnZkR2MWJLdlNUZmdFYzNUVUovMXRFQ1VGOW5waDgxUlMKdzhlM3YxYlQ5cUQ4
+NEFOQjlZMkEyU1hhNmlUUTg5Z3l5UmgzOU5sNXN5VG8xTTdKenlSUWFROVB6RUwzU0lEOAo5dVZN
+S0VtNVlYek91TFdlMFdrMXA3S0Jkd2lCRUdENjhqSmlabTl5UjRlQXArQVJsQzg9Ci0tLS0tRU5E
+IFJTQSBQUklWQVRFIEtFWS0tLS0tCg==" | base64 -d > ${serviceHome}/.ssh/id_rsa
+		restorecon ${serviceHome}/.ssh/id_rsa
+		chmod 0600 ${serviceHome}/.ssh/id_rsa
+		chown ${svcAccount}:${svcAccount} -R ${serviceHome}
+	fi
+
+	if [ ! -f ${serviceHome}/.ssh/known_hosts ]; then
+
+	echo "Z2l0aHViLmNvbSwxOTIuMzAuMjUyLjEzMCBzc2gtcnNhIEFBQUFCM056YUMxeWMyRUFBQUFCSXdB
+QUFRRUFxMkE3aFJHbWRubTl0VURiTzlJRFN3Qks2VGJRYStQWFlQQ1B5NnJiVHJUdHc3UEhrY2NL
+cnBwMHlWaHA1SGRFSWNLcjZwTGxWREJmT0xYOVFVc3lDT1Ywd3pmaklKTmxHRVlzZGxMSml6SGhi
+bjJtVWp2U0FIUXFaRVRZUDgxZUZ6TFFOblBIdDRFVlZVaDdWZkRFU1U4NEtlem1ENVFsV3BYTG12
+VTMxL3lNZitTZTh4aEhUdktTQ1pJRkltV3dvRzZtYlVvV2Y5bnpwSW9hU2pCK3dlcXFVVW1wYWFh
+c1hWYWw3MkorVVgyQisyUlBXM1JjVDBlT3pRZ3FsSkwzUktyVEp2ZHNqRTNKRUF2R3EzbEdIU1pY
+eTI4RzNza3VhMlNtVmkvdzR5Q0U2Z2JPRHFuVFdsZzcrd0M2MDR5ZEdYQThWSmlTNWFwNDNKWGlV
+RkZBYVE9PQoxOTIuMzAuMjUyLjEyOCBzc2gtcnNhIEFBQUFCM056YUMxeWMyRUFBQUFCSXdBQUFR
+RUFxMkE3aFJHbWRubTl0VURiTzlJRFN3Qks2VGJRYStQWFlQQ1B5NnJiVHJUdHc3UEhrY2NLcnBw
+MHlWaHA1SGRFSWNLcjZwTGxWREJmT0xYOVFVc3lDT1Ywd3pmaklKTmxHRVlzZGxMSml6SGhibjJt
+VWp2U0FIUXFaRVRZUDgxZUZ6TFFOblBIdDRFVlZVaDdWZkRFU1U4NEtlem1ENVFsV3BYTG12VTMx
+L3lNZitTZTh4aEhUdktTQ1pJRkltV3dvRzZtYlVvV2Y5bnpwSW9hU2pCK3dlcXFVVW1wYWFhc1hW
+YWw3MkorVVgyQisyUlBXM1JjVDBlT3pRZ3FsSkwzUktyVEp2ZHNqRTNKRUF2R3EzbEdIU1pYeTI4
+RzNza3VhMlNtVmkvdzR5Q0U2Z2JPRHFuVFdsZzcrd0M2MDR5ZEdYQThWSmlTNWFwNDNKWGlVRkZB
+YVE9PQo=" | base64 -d > ${serviceHome}/.ssh/known_hosts
+		chmod 0644 ${serviceHome}/.ssh/known_hosts
+		restorecon ${serviceHome}/.ssh/known_hosts
+		chown ${svcAccount}:${svcAccount} -R ${serviceHome}
+	fi
+
+# This section looks for the RPM packages; Ansible, Git
+	if [ ! -f /usr/bin/ansible-pull ]; then
+
+    	    sudo yum install ansible -y
+	fi
+
+	if [ ! -f /usr/bin/git ]; then
+
+		sudo yum install git -y
+	fi
+
+# This directory is used to write the tmp file that Nagios will monitor.  As it's in tmp their is always a possobility that this file will be deleted.
+	if [ ! -d /tmp/nagios/ ]; then
+
+		mkdir -p /tmp/nagios/
+	fi
+
+# This is the working directory used to store the git repo
+	if [ ! -d ${hardeningDir} ]; then
+
+		mkdir -p ${hardeningDir}
+		chown -R ${svcAccount}:${svcAccount} ${hardeningDir}
+	fi
+
+# Create an initial inventory that will use localhost.
+	if [ ! -f ${hardeningDir}/localhost ]; then
+
+		echo "[localhost]
+localhost ansible_connection=local" > ${hardeningDir}/localhost
+		chown ${svcAccount}:${svcAccount} ${hardeningDir}/localhost
+	fi
+
+}
+
+# The Nagios function is used to compare the dates of when the playbook was last run.  Using awk it's simply looking for 
+nagiosRun () {
+
+	if [ ! -f ${lastRun} ]; then
+		echo "lastRunDate=" > ${lastRun}
+	else
+		. ${lastRun}
+	fi
+
+	if [ -f ${lastRun} ]; then
+		todayDay=`date -d "now" +%s`
+		ddelta=$(( (${lastRunDate} - ${todayDay}) / 86400 ))
+
+	  	if [ ${ddelta} == "0" ]; then
+	    	echo "0,system-cron-base" > ${nagiosFile}
+	    else
+	    	echo "3,system-cron-base" > ${nagiosFile}
+	    fi
+
+	fi
+
+}
+
+runMe () {
+	if [ ! -f /tmp/.${prog} ]; then
+		cd /tmp
+	
+		touch /tmp/.${prog}
+		sudo -u ${svcAccount} /usr/bin/ansible-pull -d ${hardeningDir}/system-cron-base -i ${hardeningDir}/localhost -U ${gitRepo}
+		if [ "$?" != "0" ]; then
+	    	echo "3,system-cron-base" > ${nagiosFile}
+   			rm /tmp/.${prog}
+			exit 1
+		fi
+		rm /tmp/.${prog}
+		nagiosRun
+		echo "lastRunDate=${DATED}" > ${lastRun}
+	else 
+		exit 1
+	fi
+
+}
+
+preFlight
+
+runMe
+

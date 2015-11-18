@@ -1,0 +1,11 @@
+---
+- hosts: all
+  name: Maintain Security Posture Of Systems
+  gather_facts: true
+  user: root
+  sudo: yes
+
+  roles:
+    - { role: base, tags: base }
+    - { role: harden, tags: harden, user: root }
+    - { role: nrpe, tags: nrpe }

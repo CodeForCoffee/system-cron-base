@@ -1,0 +1,31 @@
+#!/bin/sh
+# AUTHOR -|
+#        Matt Wells - phanoko@gmail.com
+# NAME -|
+#        check_traffic
+# SYNOPSIS -|
+#        nagios check to map TX and RX for servers
+# DESCRIPTION -|
+#        A simple check for TX RX for trending
+# REVISIONS -|
+#        1.0
+
+# Exit-Codes:
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+
+CONTROL='/proc/net/dev'
+
+if [ "$#" == "0" ]; then
+    echo "No arguments provided"
+    exit ${STATE_UNKNOWN}
+else 
+RXC=`egrep $1 ${CONTROL} | awk '{print $2}'`
+TXC=`egrep $1 ${CONTROL} | awk '{print $10}'`
+
+# Return Code Logic
+        echo "OK - Interface $1 is up | $1 TX=${TXC} RX=${RXC}"
+        exit ${STATE_OK}
+fi

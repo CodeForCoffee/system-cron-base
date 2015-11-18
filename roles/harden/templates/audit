@@ -1,0 +1,11 @@
+compress
+/var/log/audit/audit.log
+{
+ rotate 90
+ daily
+ notifempty
+ missingok
+ postrotate
+ /sbin/service auditd restart 2> /dev/null > /dev/null || true
+ endscript
+}

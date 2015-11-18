@@ -1,0 +1,3 @@
+Cmnd_Alias NRPE_COMMANDS = /usr/lib64/nagios/plugins/check_directory_depth
+
+nrpe ALL = (ALL) NOPASSWD: NRPE_COMMANDS

@@ -1,0 +1,40 @@
+---
+- name: NRPE - Install Nagios Plugins And Nrpe
+  yum: pkg={{item}} state=installed
+  with_items:
+    - nagios-plugins-disk
+    - nagios-plugins-load
+    - nagios-plugins-mailq
+    - nagios-plugins-nrpe
+    - nagios-plugins-ntp
+    - nagios-plugins-procs
+    - nagios-plugins-swap
+    - nagios-plugins-users
+
+- name: NRPE - Install Our Nagios Plugins unconfined
+  copy: src={{item}} dest=/usr/lib64/nagios/plugins/{{ item }} owner=root group=root mode=0755 setype=nagios_unconfined_plugin_exec_t seuser=system_u serole=object_r selevel=s0 
+  with_items:
+     - check_directory_depth
+     - check_logqueues
+     - check_memcached
+     - check_mem.pl
+     - check_simpleLogs
+     - check_traffic
+     - check_uptime
+
+- name: NRPE - Install Our Nagios Plugins bin_t
+  copy: src={{item}} dest=/usr/lib64/nagios/plugins/{{ item }} owner=root group=root mode=0755 seuser=system_u serole=object_r setype=bin_t selevel=s0 
+  with_items:
+    - negate
+    - urlize
+    - utils.sh
+
+- name: NRPE - Deploy nrpe.cfg
+  copy: src=nrpe.cfg dest=/etc/nagios/nrpe.cfg owner=root group=root mode=0644 seuser=system_u serole=object_r setype=nrpe_etc_t selevel=s0 
+  notify: restart nrpe
+
+- name: NRPE - Install sudo snippet
+  copy: src=sudo_snippet dest=/etc/sudoers.d/nrpe owner=root group=root mode=0600 seuser=system_u serole=object_r setype=etc_t selevel=s0 
+
+- name: NRPE - Ensure Nrpe Started
+  service: name=nrpe enabled=yes state=started

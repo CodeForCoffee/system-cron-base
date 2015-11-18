@@ -1,0 +1,64 @@
+#!/bin/sh
+# AUTHOR -|
+# 	 Matt Wells - matt.wells@mosaic451.com
+# NAME -|
+#	 check_simpleLogs
+# SYNOPSIS -|
+# 	 nagios check for logs
+# DESCRIPTION -|
+#	Simple log check script.  This is an extremely simple file monitor.  
+#	The check assumes an integer on line 1.  
+#	Line one also supports text if you want something on the nagios screen.  If you do use a CSV format with 
+#	number,text
+#	or
+#	number,text,performace data
+#	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#	If performance data is desired use the example below to form your data. If not graphing will NOT work
+#	text=123; text=456; text=789;
+#	load1=0.000;15.000;30.000;0; load5=0.000;10.000;25.000;0; load15=0.000;5.000;20.000;0;
+#	If the text is empty the name is the file is placed as the text.
+# REVISIONS -|
+#        1.0
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+UNKNOWN_STATE=3
+CRITICAL_STATE=2
+WARNING_STATE=1
+OK_STATE=0
+
+#Parse up the data.  
+LOGC=`head -1 /tmp/nagios/$1 | awk -F, '{print $1}'`
+TEXTC=`head -1 /tmp/nagios/$2 | awk -F, '{print $2}'`
+PERFDATA=`head -1 /tmp/nagios/$1 | awk -F, '{print $3}'`
+
+# Preflight magic
+if [ ! -d /tmp/nagios ]; then
+	mkdir /tmp/nagios
+fi
+
+# If you're checking a file that isn't there let somebody know
+if [ ! -f /tmp/nagios/$1 ]; then
+        echo "CRITICAL - !!No file to monitor!!"
+        exit ${CRITCAL_STATE}
+fi
+
+# Do some logic so description, performance data are all optional
+if [ ! -z "${PERFDATA}" ]; then
+	DESCRIPTION="${TEXTC} | ${PERFDATA}"
+elif [ ! -z "${TEXTC}" ]; then
+	DESCRIPTION="${TEXTC}"
+else
+	DESCRIPTION="$1"
+fi
+
+# Return Code Logic
+if [ "${LOGC}" -ge "$3" ]; then
+        echo "CRITICAL - ${DESCRIPTION}"
+        exit ${CRITCAL_STATE}
+elif [ "${LOGC}" -ge "$2" ]; then
+        echo "WARNING - ${DESCRIPTION}"
+        exit ${WARNING_STATE}
+else
+        echo "OK - ${DESCRIPTION}"
+        exit ${OK_STATE}
+fi

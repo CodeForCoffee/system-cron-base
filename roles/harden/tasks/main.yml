@@ -1,0 +1,90 @@
+---
+- name: Hardening - Deploy sudoers
+  copy: src=ExampleCom-Sudo dest=/etc/sudoers.d/ExampleCom-Sudo owner=root group=root mode=0440 seuser=system_u serole=object_r setype=etc_t force=yes selevel=s0 
+
+- name: Hardening - Setup Issue
+  copy: src=issue dest=/etc/issue owner=root group=root mode=0644 serole=object_r setype=etc_runtime_t seuser=unconfined_u force=yes selevel=s0 
+
+- name: Hardening - Setup MOTD
+  template: src=motd dest=/etc/motd owner=root group=root mode=0644 serole=object_r setype=etc_runtime_t seuser=unconfined_u force=yes selevel=s0 
+
+- name: Hardening - Deploy sshd_config file
+  copy: src=sshd_config dest=/etc/ssh/sshd_config owner=root group=root mode=0644 serole=object_r setype=etc_t seuser=system_u force=yes selevel=s0 
+  notify: restart sshd
+
+- name: Hardening - Install RELP
+  yum: name=rsyslog-relp state=installed
+
+- name: Hardening - Setup Logging
+  copy: src=rsyslog.conf dest=/etc/rsyslog.conf owner=root group=root mode=0644 serole=object_r setype=syslog_conf_t seuser=unconfined_u force=yes selevel=s0 
+  notify: restart rsyslog
+
+- name: Hardening - kernel.exec-shield
+  sysctl: name=kernel.exec-shield value=1 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.conf.all.accept_redirects
+  sysctl: name=net.ipv4.conf.all.accept_redirects value=0 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.conf.default.accept_redirects
+  sysctl: name=net.ipv4.conf.default.accept_redirects value=0 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.conf.all.secure_redirects
+  sysctl: name=net.ipv4.conf.all.secure_redirects value=0 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.conf.default.secure_redirects
+  sysctl: name=net.ipv4.conf.default.secure_redirects value=0 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.conf.all.rp_filter
+  sysctl: name=net.ipv4.conf.all.rp_filter value=1 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.conf.all.accept_source_route
+  sysctl: name=net.ipv4.conf.all.accept_source_route value=0 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.icmp_echo_ignore_broadcasts
+  sysctl: name=net.ipv4.icmp_echo_ignore_broadcasts value=1 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.icmp_ignore_bogus_error_messages
+  sysctl: name=net.ipv4.icmp_ignore_bogus_error_messages value=1 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - net.ipv4.tcp_timestamps
+  sysctl: name=net.ipv4.tcp_timestamps value=0 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening -kernel.exec-shield
+  sysctl: name=kernel.exec-shield value=1 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - kernel.randomize_va_space
+  sysctl: name=kernel.randomize_va_space value=1 state=present reload=yes ignoreerrors=yes
+
+- name: Hardening - Disable IPV6
+  copy: backup=yes src=disable-ipv6.conf dest=/etc/modprobe.d/disable-ipv6.conf owner=root group=root mode=0644 seuser=system_u serole=object_r setype=modules_conf_t force=yes selevel=s0 
+
+- name: Hardening - System Auth SHA512
+  replace: dest=/etc/pam.d/system-auth-ac regexp='pam_unix.so md5' replace='pam_unix.so sha512'
+
+- name: Hardening - Password Auth SHA512
+  replace: dest=/etc/pam.d/password-auth-ac regexp='pam_unix.so md5' replace='pam_unix.so sha512'
+
+- name: Hardening - Setup audit logging for root
+  lineinfile: dest=/etc/pam.d/system-auth state=present regexp="^" insertafter="^session     required      pam_limits.so" line="session required pam_tty_audit.so disable=* enable=root"
+
+- name: Hardening - Deploy Auditd Config
+  template: src=auditd.conf.j2 dest=/etc/audit/auditd.conf owner=root group=root mode=0640 backup=yes seuser=system_u serole=object_r setype=auditd_etc_t force=yes selevel=s0 
+
+- name: Hardening - Deploy Auditd rules
+  template: src=audit.rules.j2 dest=/etc/audit/audit.rules owner=root group=root mode=0640 backup=yes seuser=system_u serole=object_r setype=auditd_etc_t force=yes selevel=s0 
+  notify: restart auditd
+
+- name: Hardening - Setup audit log rotation
+  template: src=audit dest=/etc/logrotate.d/audit owner=root group=root mode=0644 seuser=system_u serole=object_r setype=auditd_etc_t force=yes selevel=s0 
+
+- name: Hardening - Setup audit cron job
+  copy: src=audit.cron dest=/etc/cron.daily/audit.cron owner=root group=root mode=0755 serole=object_r setype=bin_t seuser=unconfined_u force=yes selevel=s0 
+
+- name: Hardening - Local Password Changes
+  shell: '/usr/bin/openssl rand -base64 32 | passwd --stdin {{item}}'
+  with_items:
+    - root
+    - svc_ansible
+    - user1
+    - user2
+

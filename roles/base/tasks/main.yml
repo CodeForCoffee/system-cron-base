@@ -1,0 +1,76 @@
+---
+- name: Base - Setup Base System Packages - P1
+  yum: pkg={{item}} state=present disable_gpg_check=no
+  with_items:
+    - autofs
+    - fipscheck
+    - iotop
+    - iptraf
+    - libsss_sudo
+    - libselinux-python
+    - logwatch
+    - lsof
+    - man
+    - mlocate
+    - nagios-plugins-disk
+    - nagios-plugins-load
+    - nagios-plugins-mailq
+    - nagios-plugins-nrpe
+    - nagios-plugins-ntp
+    - nagios-plugins-procs
+    - nagios-plugins-swap
+    - nagios-plugins-users
+    - nfs-utils
+
+- name: Base - Setup Base System Packages - P2
+  yum: pkg={{item}} state=present disable_gpg_check=no
+  with_items:
+    - nmap
+    - nrpe
+    - nscd
+    - ntp
+    - openssh-clients
+    - psmisc
+    - rsync
+    - rsyslog
+    - rsyslog-relp
+    - screen
+    - sed
+    - sysstat
+    - tuned
+    - vim
+    - wget
+    - yum-cron
+    - yum-utils
+    - system-config-firewall-base
+
+- name: Base - Enable autoupdates
+  service: enabled=yes state=started name=yum-cron
+
+- name: Base - Chkconfig Services On
+  service: name={{item}} enabled=yes 
+  with_items:
+    - auditd
+    - autofs
+    - crond
+    - iptables
+    - ip6tables
+    - netfs
+    - network
+    - nrpe
+    - nscd
+    - ntpdate
+    - postfix
+    - restorecond
+    - rsyslog
+    - sshd
+    - sysstat
+    - udev-post
+
+- name: Base - Chkconfig Services Off
+  service: name={{item}} enabled=off
+  with_items:
+    - netconsole
+    - ntpd
+    - rdisc
+    - saslauthd

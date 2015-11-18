@@ -1,0 +1,183 @@
+#!/bin/bash
+
+##############################################################################
+#
+# check_directory_depth:
+#   This nagios plugin finds the number of files in a directory, with
+#   optional directory depth arguments, that are older than the specified
+#   number of minutes.
+#
+# Copyright 2013-2015 Kevin L Hochhalter <klhochhalter@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+##############################################################################
+
+export PATH=/bin:/usr/bin
+
+STATUS_FILE=`/bin/mktemp`
+trap "{ rm -f $STATUS_FILE; }" EXIT SIGKILL SIGTERM SIGQUIT
+
+function usage {
+    : ${PAGER:='less'}
+    $PAGER << USAGE
+
+NAME
+    `basename $0` - check number of files over specified age in a directory
+
+SYNOPSIS
+    `basename $0` -d PATH -w INT -c INT [ -a MINUTES ] [ -m MINDEPTH -M MAXDEPTH ] [ -n NAME ] [ -t FILETYPE ]
+
+DESCRIPTION
+    This plugin finds the number of files in a directory, with optional directory depth arguments,
+    that are older than the specified number of minutes.
+
+OPTIONS
+    -d
+        Required: Full path to the directory to scan, or the full path to the base of a number of
+        directories if -m and -M are specified.
+
+    -w
+        Required: warning threshold. If -w and -c are the same, a positive result will be CRIT
+
+    -c
+        Required: critical threshold. If -w and -c are the same, a positive result will be CRIT
+
+    -a
+        Optional: File age in minutes. Files this age and older will be considered. Defaults to 2.
+
+    -m
+        Optional: This is the -mindepth argument to the find command. Defaults to 1.
+
+    -M
+        Optional: This is the -maxdepth argument to the find command. Defaults to 1.
+
+    -n
+        Optional: This is the -name argument to find command. Single quote if it contains special characters.
+
+    -p
+        Optional: This is the -path argument to find command. Single quote if it contains special characters.
+
+    -t
+        Optional: This is the same as the -type argument to find. Defaults to f (regular file).
+
+ILLEGAL METACHARACTERS
+    Since this is intended to be used with nrpe, keep in mind the metacharacters that are not allowed
+    by nrpe: http://sourceforge.net/p/nagios/nrpe/ci/master/tree/SECURITY
+
+EXAMPLE
+    `basename $0` -d /tmp/foo -w 10 -c 100 -a 5 -m 1 -M 5 -n myfile -t f
+
+USAGE
+
+exit 0
+
+}
+
+DIRECTORY_PATH=""
+WARN=""
+CRIT=""
+AGE=2
+MINDEPTH=1
+MAXDEPTH=1
+TYPE='f'
+FILE_NAME_PATTERN='*'
+PATH_NAME_PATTERN='*'
+
+while getopts d:w:c:a:m:M:n:p:t:hH opt; do
+    case $opt in
+        d)
+            DIRECTORY_PATH=$OPTARG
+        ;;
+        w)
+            WARN=$OPTARG
+        ;;
+        c)
+            CRIT=$OPTARG
+        ;;
+        a)
+            AGE=$OPTARG
+        ;;
+        m)
+            MINDEPTH=$OPTARG
+        ;;
+        M)
+            MAXDEPTH=$OPTARG
+        ;;
+        n)
+            FILE_NAME_PATTERN=$OPTARG
+        ;;
+        p)
+            PATH_NAME_PATTERN=$OPTARG
+        ;;
+        t)
+            TYPE=$OPTARG
+        ;;
+        h|H)
+            usage
+        ;;
+    esac
+done
+
+for arg in ${!DIRECTORY_PATH@} ${!WARN@} ${!CRIT@}; do
+    if [ -z ${!arg} ]; then
+        echo "${arg} must be set."
+        exit 3
+    fi
+done
+
+if [ $MAXDEPTH -lt $MINDEPTH ]; then
+    echo "maxdepth must be greater than or equal to mindepth"
+    echo "mindepth: ${MINDEPTH} maxdepth: ${MAXDEPTH}"
+    exit 3
+fi
+
+RETVAL=`find ${DIRECTORY_PATH} -mindepth ${MINDEPTH} -maxdepth ${MAXDEPTH} -type ${TYPE} -name "${FILE_NAME_PATTERN}" -path "${PATH_NAME_PATTERN}" -mmin +${AGE} >>${STATUS_FILE} 2>&1`
+if [ $? -ne 0 ]; then
+    echo "UNKNOWN"
+    cat ${STATUS_FILE}
+    exit 3
+fi
+
+COUNT=`wc -l ${STATUS_FILE} | awk '{print $1}'`
+
+if [ "$COUNT" -gt 1 ]; then FILES="files"; else FILES="file"; fi
+if [ "$AGE" -gt 1 ]; then MINUTES="minutes"; else MINUTES="minute"; fi
+
+if [ $COUNT -eq 0 ]; then
+    echo "OK | files=${COUNT}"
+    exit 0
+fi
+
+if [ $COUNT -lt $WARN ]; then
+    echo "OK | files=${COUNT}"
+    exit 0
+fi
+
+if [ $COUNT -ge $WARN ] && [ $COUNT -lt $CRIT ]; then
+    echo "WARN: $COUNT | files=${COUNT}"
+    echo "Found ${COUNT} ${FILES} older than ${AGE} ${MINUTES} in ${DIRECTORY_PATH}"
+    exit 1
+fi
+
+if [ $COUNT -ge $CRIT ]; then
+    echo "CRIT: $COUNT | files=${COUNT}"
+    echo "Found ${COUNT} ${FILES} older than ${AGE} ${MINUTES} in ${DIRECTORY_PATH}"
+    exit 2
+fi
+
+# just in case
+echo "UNKNOWN"
+exit 3
+
